@@ -7,6 +7,7 @@ use App\Enums\EventStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreEventRequest;
 use App\Http\Requests\Admin\UpdateEventRequest;
+use App\Models\AuditLog;
 use App\Models\Event;
 use App\Services\AuditLogService;
 use App\Services\EventService;
@@ -77,6 +78,44 @@ class EventController extends Controller
         return Inertia::render('admin/events/edit', [
             'event' => $this->serializeEvent($event),
             'statuses' => EventStatus::values(),
+        ]);
+    }
+
+    public function show(Event $event): Response
+    {
+        $logs = AuditLog::query()
+            ->with('user:id,name,email')
+            ->where(function ($query) use ($event) {
+                $query->where(function ($eventLogs) use ($event) {
+                    $eventLogs->where('entity_type', 'event')
+                        ->where('entity_id', $event->id);
+                })->orWhere(function ($bookingLogs) use ($event) {
+                    $bookingLogs->where('entity_type', 'booking')
+                        ->where('metadata->event_id', $event->id);
+                });
+            })
+            ->latest()
+            ->limit(50)
+            ->get()
+            ->map(fn (AuditLog $log) => [
+                'id' => $log->id,
+                'action' => $log->action,
+                'entity_type' => $log->entity_type,
+                'entity_id' => $log->entity_id,
+                'metadata' => $log->metadata,
+                'request_id' => $log->request_id,
+                'created_at' => $log->created_at?->toIso8601String(),
+                'user' => $log->user ? [
+                    'id' => $log->user->id,
+                    'name' => $log->user->name,
+                    'email' => $log->user->email,
+                ] : null,
+            ])
+            ->all();
+
+        return Inertia::render('admin/events/show', [
+            'event' => $this->serializeEvent($event),
+            'auditLogs' => $logs,
         ]);
     }
 

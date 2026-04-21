@@ -7,6 +7,7 @@ use App\DataTransferObjects\CreateBookingData;
 use App\Enums\BookingStatus;
 use App\Enums\EventStatus;
 use App\Exceptions\AlreadyBookedException;
+use App\Exceptions\BookingCancellationException;
 use App\Exceptions\EventUnavailableException;
 use App\Exceptions\PaymentFailedException;
 use App\Exceptions\SoldOutException;
@@ -25,6 +26,7 @@ class BookingService
         private readonly PaymentRepositoryInterface $payments,
         private readonly FakePaymentGatewayService $fakePayments,
         private readonly ReferenceGenerator $references,
+        private readonly AuditLogService $auditLogs,
     ) {
     }
 
@@ -94,6 +96,21 @@ class BookingService
                     'result' => 'confirmed',
                 ]);
 
+                $this->auditLogs->record(
+                    userId: $data->userId,
+                    action: 'user.booking.joined',
+                    entityType: 'booking',
+                    entityId: $booking->id,
+                    metadata: [
+                        'booking_number' => $booking->booking_number,
+                        'event_id' => $event->id,
+                        'event_title' => $event->title,
+                        'amount' => number_format((float) $payment->amount, 2, '.', ''),
+                        'status' => $booking->status->value,
+                    ],
+                    requestId: request()?->attributes->get('request_id'),
+                );
+
                 return $result;
             }, 5);
         } catch (\Throwable $exception) {
@@ -119,5 +136,56 @@ class BookingService
             'exception' => $exception::class,
             'message' => $exception->getMessage(),
         ]);
+    }
+
+    public function cancelByBookingNumber(string $bookingNumber, int $userId): BookingResultData
+    {
+        return DB::transaction(function () use ($bookingNumber, $userId) {
+            $booking = $this->bookings->findByBookingNumberForUser($bookingNumber, $userId);
+
+            if ($booking === null || $booking->event === null) {
+                throw new BookingCancellationException('Booking was not found.');
+            }
+
+            if ($booking->status !== BookingStatus::Confirmed) {
+                throw new BookingCancellationException('Only confirmed bookings can be cancelled.');
+            }
+
+            $event = $this->events->findForUpdate($booking->event_id);
+            if ($event === null) {
+                throw new BookingCancellationException('Event no longer exists.');
+            }
+
+            $booking = $this->bookings->update($booking, [
+                'status' => BookingStatus::Cancelled->value,
+            ]);
+
+            $event = $this->events->update($event, [
+                'available_seats' => $event->available_seats + $booking->seat_count,
+            ]);
+
+            $this->auditLogs->record(
+                userId: $userId,
+                action: 'user.booking.cancelled',
+                entityType: 'booking',
+                entityId: $booking->id,
+                metadata: [
+                    'booking_number' => $booking->booking_number,
+                    'event_id' => $event->id,
+                    'event_title' => $event->title,
+                    'status' => $booking->status->value,
+                ],
+                requestId: request()?->attributes->get('request_id'),
+            );
+
+            return new BookingResultData(
+                bookingNumber: $booking->booking_number,
+                eventId: $event->id,
+                status: $booking->status->value,
+                amount: number_format((float) $booking->unit_price, 2, '.', ''),
+                availableSeats: $event->available_seats,
+                transactionReference: $booking->payment?->transaction_reference ?? '',
+            );
+        }, 5);
     }
 }

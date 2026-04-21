@@ -113,6 +113,62 @@ Track admin actions with "who did what and when", especially for event managemen
 
 ---
 
+## 6) Audit Coverage for User Join / Unjoin + Event-Centric Timeline
+
+### Goal
+Make audit logs directly related to the event lifecycle and include user booking activity.
+
+### What was implemented
+- Added audit entries for user booking actions:
+  - `user.booking.joined`
+  - `user.booking.cancelled`
+- Event-specific audit timeline now includes:
+  - admin event actions
+  - user join/unjoin actions tied to the same event (`metadata.event_id`)
+- Added admin event details page where pressing "View" on an event shows:
+  - event information
+  - latest related audit timeline
+
+### Files added
+- `app/Exceptions/BookingCancellationException.php`
+- `resources/js/pages/admin/events/show.tsx`
+
+### Files edited
+- `app/Services/BookingService.php`
+- `app/Http/Controllers/Admin/EventController.php`
+- `resources/js/pages/admin/events/index.tsx`
+- `routes/web.php`
+
+---
+
+## 7) User Can Remove Their Join (Cancel Booking)
+
+### Goal
+Allow users to cancel their own booking from the dashboard UI.
+
+### What was implemented
+- Added authenticated endpoint:
+  - `DELETE /api/bookings/{bookingNumber}`
+- Added cancellation service flow:
+  - verifies booking belongs to current user
+  - verifies booking is confirmed
+  - marks booking as `cancelled`
+  - returns seat back to event (`available_seats + 1`)
+  - writes audit log (`user.booking.cancelled`)
+- Updated dashboard UI:
+  - shows booking status column
+  - adds "Cancel join" button for confirmed bookings
+  - updates local UI state after cancel
+
+### Files edited
+- `app/Http/Controllers/Api/BookingController.php`
+- `app/Repositories/Contracts/BookingRepositoryInterface.php`
+- `app/Repositories/Eloquent/EloquentBookingRepository.php`
+- `resources/js/pages/dashboard.tsx`
+- `routes/web.php`
+
+---
+
 ## Full List of Added Files
 
 - `IMPLEMENTATION_REPORT.md`
@@ -120,6 +176,8 @@ Track admin actions with "who did what and when", especially for event managemen
 - `database/migrations/2026_04_21_000000_create_audit_logs_table.php`
 - `app/Models/AuditLog.php`
 - `app/Services/AuditLogService.php`
+- `app/Exceptions/BookingCancellationException.php`
+- `resources/js/pages/admin/events/show.tsx`
 
 ## Full List of Edited Files
 
@@ -129,6 +187,13 @@ Track admin actions with "who did what and when", especially for event managemen
 - `bootstrap/app.php`
 - `app/Http/Middleware/HandleInertiaRequests.php`
 - `app/Http/Controllers/Admin/EventController.php`
+- `app/Http/Controllers/Admin/AuditLogController.php`
+- `app/Http/Controllers/Api/BookingController.php`
+- `app/Repositories/Contracts/BookingRepositoryInterface.php`
+- `app/Repositories/Eloquent/EloquentBookingRepository.php`
+- `resources/js/components/app-sidebar.tsx`
+- `resources/js/pages/admin/audit-logs/index.tsx`
+- `resources/js/pages/admin/events/index.tsx`
 
 ---
 

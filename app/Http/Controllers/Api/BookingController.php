@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\DataTransferObjects\CreateBookingData;
 use App\Exceptions\AlreadyBookedException;
+use App\Exceptions\BookingCancellationException;
 use App\Exceptions\EventUnavailableException;
 use App\Exceptions\PaymentFailedException;
 use App\Exceptions\SoldOutException;
@@ -39,6 +40,20 @@ class BookingController extends Controller
             return $this->errorResponse('payment_failed', $exception->getMessage(), 422);
         } catch (EventUnavailableException $exception) {
             return $this->errorResponse('booking_unavailable', $exception->getMessage(), 422);
+        }
+    }
+
+    public function destroy(string $bookingNumber): JsonResponse
+    {
+        try {
+            $result = $this->bookings->cancelByBookingNumber($bookingNumber, request()->user()->id);
+
+            return response()->json([
+                'message' => 'Booking cancelled',
+                'data' => BookingResource::make($result)->resolve(),
+            ]);
+        } catch (BookingCancellationException $exception) {
+            return $this->errorResponse('cannot_cancel', $exception->getMessage(), 422);
         }
     }
 

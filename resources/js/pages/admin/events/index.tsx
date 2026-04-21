@@ -109,6 +109,9 @@ export default function EventsIndex({ events }: EventsPageProps) {
                                             </td>
                                             <td className="py-4">
                                                 <div className="flex flex-wrap gap-2">
+                                                    <Link className={buttonVariants({ variant: 'secondary', size: 'sm' })} href={route('admin.events.show', event.id)}>
+                                                        View
+                                                    </Link>
                                                     <Link className={buttonVariants({ variant: 'outline', size: 'sm' })} href={route('admin.events.edit', event.id)}>
                                                         Edit
                                                     </Link>

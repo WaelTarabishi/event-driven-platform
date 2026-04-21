@@ -11,6 +11,10 @@ interface BookingRepositoryInterface
 
     public function createConfirmed(array $attributes): Booking;
 
+    public function findByBookingNumberForUser(string $bookingNumber, int $userId): ?Booking;
+
+    public function update(Booking $booking, array $attributes): Booking;
+
     public function countConfirmedByEvent(int $eventId): int;
 
     public function hasConfirmedForEvent(int $eventId): bool;

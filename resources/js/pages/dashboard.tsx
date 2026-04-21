@@ -80,16 +80,18 @@ function getCsrfToken() {
 
 export default function Dashboard({ isAdmin, metrics, userBookings }: DashboardProps) {
     const { flash } = usePage<SharedData>().props;
+    const [bookings, setBookings] = useState<UserBooking[]>(userBookings);
     const [events, setEvents] = useState<EventRow[]>([]);
     const [eventsLoading, setEventsLoading] = useState(false);
     const [eventsError, setEventsError] = useState<string | null>(null);
     const [bookingMessage, setBookingMessage] = useState<string | null>(null);
     const [bookingError, setBookingError] = useState<string | null>(null);
     const [joiningEventId, setJoiningEventId] = useState<number | null>(null);
+    const [cancelingBookingNumber, setCancelingBookingNumber] = useState<string | null>(null);
 
     const joinedEventTitles = useMemo(
-        () => new Set(userBookings.map((booking) => booking.event_title.toLowerCase())),
-        [userBookings],
+        () => new Set(bookings.filter((booking) => booking.status === 'confirmed').map((booking) => booking.event_title.toLowerCase())),
+        [bookings],
     );
 
     useEffect(() => {
@@ -150,7 +152,7 @@ export default function Dashboard({ isAdmin, metrics, userBookings }: DashboardP
 
             const payload = (await response.json()) as {
                 message?: string;
-                data?: { available_seats?: number };
+                data?: { available_seats?: number; booking_number?: string; status?: string };
             };
 
             if (!response.ok) {
@@ -171,11 +173,62 @@ export default function Dashboard({ isAdmin, metrics, userBookings }: DashboardP
                         : currentEvent,
                 ),
             );
+            setBookings((currentBookings) => [
+                {
+                    booking_number: payload.data?.booking_number ?? `PENDING-${event.id}`,
+                    status: payload.data?.status ?? 'confirmed',
+                    amount: event.price,
+                    event_title: event.title,
+                    venue: event.venue,
+                    starts_at: event.starts_at,
+                    created_at: new Date().toISOString(),
+                },
+                ...currentBookings,
+            ]);
             setBookingMessage(payload.message ?? `You joined "${event.title}" successfully.`);
         } catch (error) {
             setBookingError(error instanceof Error ? error.message : 'Could not complete booking.');
         } finally {
             setJoiningEventId(null);
+        }
+    };
+
+    const handleCancelBooking = async (booking: UserBooking) => {
+        setBookingMessage(null);
+        setBookingError(null);
+        setCancelingBookingNumber(booking.booking_number);
+
+        try {
+            const response = await fetch(`/api/bookings/${booking.booking_number}`, {
+                method: 'DELETE',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken(),
+                    'X-XSRF-TOKEN': getCsrfToken(),
+                },
+                credentials: 'same-origin',
+            });
+
+            const payload = (await response.json()) as { message?: string };
+            if (!response.ok) {
+                throw new Error(payload.message ?? 'Could not cancel booking.');
+            }
+
+            setBookings((currentBookings) =>
+                currentBookings.map((currentBooking) =>
+                    currentBooking.booking_number === booking.booking_number ? { ...currentBooking, status: 'cancelled' } : currentBooking,
+                ),
+            );
+            setEvents((currentEvents) =>
+                currentEvents.map((event) =>
+                    event.title === booking.event_title ? { ...event, available_seats: event.available_seats + 1 } : event,
+                ),
+            );
+            setBookingMessage(payload.message ?? `Booking ${booking.booking_number} cancelled.`);
+        } catch (error) {
+            setBookingError(error instanceof Error ? error.message : 'Could not cancel booking.');
+        } finally {
+            setCancelingBookingNumber(null);
         }
     };
 
@@ -376,7 +429,7 @@ export default function Dashboard({ isAdmin, metrics, userBookings }: DashboardP
                                 <CardDescription>Your latest confirmed bookings.</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {userBookings.length === 0 ? (
+                                {bookings.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">No bookings yet.</p>
                                 ) : (
                                     <div className="overflow-x-auto">
@@ -388,16 +441,29 @@ export default function Dashboard({ isAdmin, metrics, userBookings }: DashboardP
                                                     <th className="pb-3">Venue</th>
                                                     <th className="pb-3">Starts at</th>
                                                     <th className="pb-3">Amount</th>
+                                                    <th className="pb-3">Status</th>
+                                                    <th className="pb-3">Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {userBookings.map((booking) => (
+                                                {bookings.map((booking) => (
                                                     <tr key={booking.booking_number} className="border-b last:border-b-0">
                                                         <td className="py-3 font-medium">{booking.booking_number}</td>
                                                         <td className="py-3">{booking.event_title}</td>
                                                         <td className="py-3">{booking.venue}</td>
                                                         <td className="py-3">{formatDate(booking.starts_at)}</td>
                                                         <td className="py-3">${booking.amount}</td>
+                                                        <td className="py-3 capitalize">{booking.status}</td>
+                                                        <td className="py-3">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={booking.status !== 'confirmed' || cancelingBookingNumber === booking.booking_number}
+                                                                onClick={() => void handleCancelBooking(booking)}
+                                                            >
+                                                                {cancelingBookingNumber === booking.booking_number ? 'Cancelling...' : 'Cancel join'}
+                                                            </Button>
+                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>

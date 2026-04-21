@@ -14,12 +14,30 @@ class EloquentBookingRepository implements BookingRepositoryInterface
         return Booking::query()
             ->where('user_id', $userId)
             ->where('event_id', $eventId)
+            ->where('status', BookingStatus::Confirmed->value)
             ->exists();
     }
 
     public function createConfirmed(array $attributes): Booking
     {
         return Booking::query()->create($attributes);
+    }
+
+    public function findByBookingNumberForUser(string $bookingNumber, int $userId): ?Booking
+    {
+        return Booking::query()
+            ->with('event')
+            ->where('booking_number', $bookingNumber)
+            ->where('user_id', $userId)
+            ->first();
+    }
+
+    public function update(Booking $booking, array $attributes): Booking
+    {
+        $booking->fill($attributes);
+        $booking->save();
+
+        return $booking->refresh();
     }
 
     public function countConfirmedByEvent(int $eventId): int
