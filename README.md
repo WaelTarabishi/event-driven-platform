@@ -99,6 +99,33 @@ CI workflow is in:
 
 and uses MySQL service.
 
+## Load Testing (k6)
+
+This project includes a ready concurrency script:
+- `tests/load/booking-concurrency.js`
+
+### 50 users competing for 10 seats
+
+1. Seed load-test users and event:
+
+```bash
+php artisan db:seed --class=LoadTestSeeder
+```
+
+2. Get event id for `concurrency-demo-event` (from DB), then run:
+
+```bash
+k6 run -e BASE_URL=http://127.0.0.1:8000 -e EVENT_ID=1 tests/load/booking-concurrency.js
+```
+
+The script automatically:
+- logs in each virtual user (`load1@test.com` ... `load50@test.com`)
+- sends one booking request per user concurrently
+
+Expected outcome:
+- about 10 successful bookings (`201`)
+- remaining requests fail with `409/422` due to sold out or booking constraints
+
 ## Audit Logging
 
 Audit records are stored in `audit_logs` table and include:
